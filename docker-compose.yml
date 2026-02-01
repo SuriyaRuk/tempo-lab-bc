@@ -1,0 +1,117 @@
+version: "3.8"
+
+services:
+  # Service 1: Generate Genesis
+  genesis:
+    build:
+      context: ./tempo
+      dockerfile: Dockerfile.combined
+      target: tempo-xtask
+      args:
+        RUST_PROFILE: release
+    image: tempo-xtask:local
+    container_name: tempo-genesis
+    volumes:
+      - ./genesis-data:/data
+      - ./config:/config
+    command: >
+      generate-genesis
+      --output /data
+      --accounts ${ACCOUNTS:-1000}
+      --mnemonic "${MNEMONIC:-test test test test test test test test test test test junk}"
+      --coinbase ${COINBASE:-0x0000000000000000000000000000000000000000}
+      --chain-id ${CHAIN_ID:-1337}
+      --gas-limit ${GAS_LIMIT:-3000000000}
+      --epoch-length ${EPOCH_LENGTH:-302400}
+      --validators ${VALIDATORS:-127.0.0.1:9000}
+      ${SEED:+--seed ${SEED}}
+      ${PATHUSD_ADMIN:+--pathusd-admin ${PATHUSD_ADMIN}}
+      --pathusd-amount ${PATHUSD_AMOUNT:-18446744073709551615}
+      ${VALIDATOR_ADMIN:+--validator-admin ${VALIDATOR_ADMIN}}
+      ${VALIDATOR_ADDRESSES:+--validator-addresses ${VALIDATOR_ADDRESSES}}
+      ${NO_EXTRA_TOKENS:+--no-extra-tokens}
+      ${DEPLOYMENT_GAS_TOKEN:+--deployment-gas-token}
+      ${DEPLOYMENT_GAS_TOKEN_ADMIN:+--deployment-gas-token-admin ${DEPLOYMENT_GAS_TOKEN_ADMIN}}
+      --t0-time ${T0_TIME:-0}
+      --t1-time ${T1_TIME:-0}
+#--no-dkg-in-genesis
+#      ${NO_PAIRWISE_LIQUIDITY:+--no-pairwise-liquidity}
+    environment:
+      - RUST_LOG=${RUST_LOG:-info}
+    networks:
+      - tempo-net
+
+  # Service 2: Tempo Node (Validator)
+  # config comply with reth
+  # add validators docker compose run --rm genesis  generate-add-peer --help
+  tempo-node:
+    #    build:
+    #      context: ./tempo
+    #      dockerfile: Dockerfile.combined
+    #      target: tempo
+    #      args:
+    #        RUST_PROFILE: release
+    #    image: tempo:local
+    image: ghcr.io/tempoxyz/tempo:latest
+    container_name: tempo-validator
+    #    depends_on:
+    #      genesis:
+    #        condition: service_completed_successfully
+    volumes:
+      - ./genesis-data:/genesis:ro
+      - ./node-data:/data
+      - ./data-consensus:/data/consensus
+      - ./logs:/logs
+    ports:
+      - "8545:8545"    # HTTP RPC
+      - "8546:8546"    # WebSocket
+      - "30303:30303"  # P2P TCP
+      - "30303:30303/udp"  # P2P UDP
+      - "9000:9000"    # Consensus
+    command: >
+      node
+      --chain /genesis/genesis.json
+      --datadir /data
+      --http
+      --http.addr 0.0.0.0
+      --http.port 8545
+      --http.api all
+      --http.corsdomain "*"
+      --ws
+      --ws.addr 0.0.0.0
+      --ws.port 8546
+      --ws.api all
+      --engine.disable-precompile-cache
+      --engine.legacy-state-root
+      --builder.gaslimit ${BUILDER_GAS_LIMIT:-3000000000}
+      --builder.max-tasks ${BUILDER_MAX_TASKS:-8}
+      --builder.deadline ${BUILDER_DEADLINE:-3}
+      --builder.interval ${BUILDER_INTERVAL:-500ms}
+      --log.file.directory /logs
+      --faucet.enabled
+      --faucet.private-key ${FAUCET_PRIVATE_KEY:-0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80}
+      --faucet.amount ${FAUCET_AMOUNT:-1000000000000}
+      --faucet.address ${FAUCET_ADDRESS:-0x20c0000000000000000000000000000000000001}
+      --consensus.signing-key /genesis/127.0.0.1:9000/signing.key
+      --consensus.signing-share /genesis/127.0.0.1:9000/signing.share
+      --consensus.datadir /data/consensus
+      --consensus.fee-recipient ${FEE_RECIPIENT:-0x0000000000000000000000000000000000000000}
+#--dev
+#      --dev.block-time ${BLOCK_TIME:-1sec}
+    environment:
+      - RUST_LOG=${RUST_LOG:-info}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8545/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    stop_signal: SIGTERM
+    stop_grace_period: 30s
+    restart: unless-stopped
+    networks:
+      - tempo-net
+
+networks:
+  tempo-net:
+    driver: bridge

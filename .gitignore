@@ -1,0 +1,23 @@
+# Environment
+.env
+.env.*
+
+# OS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+
+# Data
+node-data/
+
+# Logs
+logs/
+
+# Claude
+.claude/
+CLAUDE.local.md
+
+# Node
+node_modules/

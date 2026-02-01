@@ -1,0 +1,176 @@
+version: "3.8"
+
+# Multi-Validator Setup for Tempo Private Chain
+# Use: docker compose -f docker-compose.yml -f docker-compose.multi-validator.yml up
+
+services:
+  # Override genesis to include multiple validators
+  genesis:
+    command: >
+      generate-genesis
+      --output /data
+      --accounts ${ACCOUNTS:-1000}
+      --chain-id ${CHAIN_ID:-1337}
+      --validators validator-1:9000,validator-2:9000,validator-3:9000
+      --gas-limit ${GAS_LIMIT:-3000000000}
+      --epoch-length ${EPOCH_LENGTH:-302400}
+      --no-dkg-in-genesis
+
+  # Validator 1 (Primary)
+  validator-1:
+    image: ghcr.io/tempoxyz/tempo:latest
+    platform: linux/amd64
+    container_name: tempo-validator-1
+    depends_on:
+      genesis:
+        condition: service_completed_successfully
+    volumes:
+      - genesis-data:/genesis:ro
+      - validator1-data:/data
+      - ./logs/validator-1:/logs
+    ports:
+      - "8545:8545"
+      - "8546:8546"
+      - "30303:30303"
+      - "30303:30303/udp"
+      - "9000:9000"
+    command: >
+      node
+      --chain /genesis/genesis.json
+      --datadir /data
+      --http
+      --http.addr 0.0.0.0
+      --http.port 8545
+      --http.api all
+      --http.corsdomain "*"
+      --ws
+      --ws.addr 0.0.0.0
+      --ws.port 8546
+      --ws.api all
+      --engine.disable-precompile-cache
+      --engine.legacy-state-root
+      --builder.gaslimit ${BUILDER_GAS_LIMIT:-3000000000}
+      --builder.max-tasks ${BUILDER_MAX_TASKS:-8}
+      --builder.deadline ${BUILDER_DEADLINE:-3}
+      --log.file.directory /logs
+      --consensus.private-key-file /genesis/validator_0/ed25519_signing_key
+      --consensus.bls-key-file /genesis/validator_0/bls12381_signing_share
+      --faucet.enabled
+      --faucet.private-key ${FAUCET_PRIVATE_KEY:-0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80}
+      --faucet.amount ${FAUCET_AMOUNT:-1000000000000}
+      --faucet.address ${FAUCET_ADDRESS:-0x20c0000000000000000000000000000000000001}
+    environment:
+      - RUST_LOG=${RUST_LOG:-info}
+    stop_signal: SIGTERM
+    stop_grace_period: 30s
+    restart: unless-stopped
+    networks:
+      - tempo-net
+
+  # Validator 2
+  validator-2:
+    image: ghcr.io/tempoxyz/tempo:latest
+    platform: linux/amd64
+    container_name: tempo-validator-2
+    depends_on:
+      genesis:
+        condition: service_completed_successfully
+      validator-1:
+        condition: service_started
+    volumes:
+      - genesis-data:/genesis:ro
+      - validator2-data:/data
+      - ./logs/validator-2:/logs
+    ports:
+      - "8555:8545"
+      - "8556:8546"
+      - "30313:30303"
+      - "30313:30303/udp"
+      - "9001:9000"
+    command: >
+      node
+      --chain /genesis/genesis.json
+      --datadir /data
+      --http
+      --http.addr 0.0.0.0
+      --http.port 8545
+      --http.api all
+      --http.corsdomain "*"
+      --ws
+      --ws.addr 0.0.0.0
+      --ws.port 8546
+      --ws.api all
+      --engine.disable-precompile-cache
+      --engine.legacy-state-root
+      --builder.gaslimit ${BUILDER_GAS_LIMIT:-3000000000}
+      --builder.max-tasks ${BUILDER_MAX_TASKS:-8}
+      --builder.deadline ${BUILDER_DEADLINE:-3}
+      --log.file.directory /logs
+      --consensus.private-key-file /genesis/validator_1/ed25519_signing_key
+      --consensus.bls-key-file /genesis/validator_1/bls12381_signing_share
+      --bootnodes enode://validator-1:30303
+    environment:
+      - RUST_LOG=${RUST_LOG:-info}
+    stop_signal: SIGTERM
+    stop_grace_period: 30s
+    restart: unless-stopped
+    networks:
+      - tempo-net
+
+  # Validator 3
+  validator-3:
+    image: ghcr.io/tempoxyz/tempo:latest
+    platform: linux/amd64
+    container_name: tempo-validator-3
+    depends_on:
+      genesis:
+        condition: service_completed_successfully
+      validator-1:
+        condition: service_started
+    volumes:
+      - genesis-data:/genesis:ro
+      - validator3-data:/data
+      - ./logs/validator-3:/logs
+    ports:
+      - "8565:8545"
+      - "8566:8546"
+      - "30323:30303"
+      - "30323:30303/udp"
+      - "9002:9000"
+    command: >
+      node
+      --chain /genesis/genesis.json
+      --datadir /data
+      --http
+      --http.addr 0.0.0.0
+      --http.port 8545
+      --http.api all
+      --http.corsdomain "*"
+      --ws
+      --ws.addr 0.0.0.0
+      --ws.port 8546
+      --ws.api all
+      --engine.disable-precompile-cache
+      --engine.legacy-state-root
+      --builder.gaslimit ${BUILDER_GAS_LIMIT:-3000000000}
+      --builder.max-tasks ${BUILDER_MAX_TASKS:-8}
+      --builder.deadline ${BUILDER_DEADLINE:-3}
+      --log.file.directory /logs
+      --consensus.private-key-file /genesis/validator_2/ed25519_signing_key
+      --consensus.bls-key-file /genesis/validator_2/bls12381_signing_share
+      --bootnodes enode://validator-1:30303
+    environment:
+      - RUST_LOG=${RUST_LOG:-info}
+    stop_signal: SIGTERM
+    stop_grace_period: 30s
+    restart: unless-stopped
+    networks:
+      - tempo-net
+
+volumes:
+  validator1-data:
+    driver: local
+  validator2-data:
+    driver: local
+  validator3-data:
+    driver: local
